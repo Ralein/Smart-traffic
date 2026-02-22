@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Traffic Signal Management</title>
+    <meta name="description"
+        content="Real-time smart traffic signal management dashboard with adaptive timing, live countdown, and analytics.">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <!-- Leaflet.js -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+
+        /* Animated gradient background */
+        .bg-mesh {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(16, 185, 129, 0.06) 0%, transparent 50%),
+                #0f172a;
+        }
+
+        /* Glassmorphism card */
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 16px;
+        }
+
+        .glass-hover {
+            transition: all 0.3s ease;
+        }
+
+        .glass-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            border-color: rgba(148, 163, 184, 0.2);
+        }
+
+        /* Signal light */
+        .signal-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: inline-block;
+            transition: all 0.4s ease;
+        }
+
+        .signal-dot.active {
+            box-shadow: 0 0 14px 4px currentColor;
+        }
+
+        .signal-dot.dim {
+            opacity: 0.15;
+        }
+
+        /* Phase badge glow */
+        .phase-green {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .phase-yellow {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .phase-red {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .density-low {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+        }
+
+        .density-medium {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+        }
+
+        .density-high {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+        }
+
+        /* Countdown ring */
+        .countdown-ring {
+            width: 80px;
+            height: 80px;
+            position: relative;
+        }
+
+        .countdown-ring svg {
+            transform: rotate(-90deg);
+        }
+
+        .countdown-ring .value {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        /* Pulse animation for emergency */
+        @keyframes emergencyPulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+            }
+        }
+
+        .emergency-active {
+            animation: emergencyPulse 1.5s ease-in-out infinite;
+            border-color: rgba(239, 68, 68, 0.5) !important;
+        }
+
+        /* Map container */
+        #map {
+            height: 350px;
+            border-radius: 12px;
+            z-index: 1;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.3);
+            border-radius: 3px;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 9999;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transform: translateX(120%);
+            transition: transform 0.4s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        /* Lucide icon sizing helpers */
+        .icon-sm {
+            width: 16px;
+            height: 16px;
+        }
+
+        .icon-md {
+            width: 20px;
+            height: 20px;
+        }
+
+        .icon-lg {
+            width: 24px;
+            height: 24px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-mesh"></div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast glass" style="border: 1px solid rgba(16,185,129,0.4); color: #34d399;"></div>
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 glass border-b border-slate-700/50" style="backdrop-filter: blur(20px);">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div
+                    class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
+                    <i data-lucide="traffic-cone" class="icon-lg text-white"></i>
+                </div>
+                <div>
+                    <h1
+                        class="text-lg font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+                        Traffic Signal Command</h1>
+                    <p class="text-xs text-slate-400">Smart Adaptive Control System</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="liveClock" class="text-sm font-mono text-slate-400"></span>
+                <span id="liveIndicator" class="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> LIVE
+                </span>
+                <button onclick="simulateAll()" id="simBtn"
+                    class="px-4 py-2 text-sm font-semibold rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white transition-all hover:scale-105 active:scale-95 flex items-center gap-2">
+                    <i data-lucide="shuffle" class="icon-sm"></i> Simulate
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+        <!-- Stats Row -->
+        <section id="statsRow" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <!-- Filled by JS -->
+        </section>
+
+        <!-- Signal Cards -->
+        <section>
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <i data-lucide="radio-tower" class="icon-md text-cyan-400"></i> Signal Status
+                </h2>
+                <span id="lastUpdated" class="text-xs text-slate-500"></span>
+            </div>
+            <div id="signalGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                <!-- Filled by JS -->
+            </div>
+        </section>
+
+        <!-- Charts + Map -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Trend Chart -->
+            <div class="glass p-6">
+                <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <i data-lucide="trending-up" class="icon-md text-violet-400"></i> Vehicle Count Trends
+                </h3>
+                <div style="height: 300px;">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            <!-- Map -->
+            <div class="glass p-6">
+                <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <i data-lucide="map-pin" class="icon-md text-rose-400"></i> Signal Map
+                    <span id="locationStatus"
+                        class="text-xs font-normal text-slate-500 ml-auto flex items-center gap-1">
+                        <i data-lucide="loader" class="icon-sm animate-spin"></i> Locating...
+                    </span>
+                </h3>
+                <div id="map"></div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center py-6 text-slate-600 text-xs">
+        Smart Traffic Signal Management System &copy; 2026
+    </footer>
+
+    <script>
+        // ─── STATE ─────────────────────────────────────────
+        let signalsData = [];
+        let trendChart = null;
+        let mapInstance = null;
+        let mapMarkers = {};
+        let userMarker = null;
+        let userLocation = null;
+        const POLL_INTERVAL = 3000;
+        const CHART_COLORS = [
+            'rgb(56, 189, 248)', 'rgb(168, 85, 247)', 'rgb(52, 211, 153)',
+            'rgb(251, 191, 36)', 'rgb(248, 113, 113)', 'rgb(96, 165, 250)',
+        ];
+
+        // ─── STAT ICONS (inline SVG for dynamic rendering) ──
+        const STAT_ICONS = {
+            car: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`,
+            timer: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>`,
+            alertCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>`,
+            siren: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1-1v-1a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1a1 1 0 0 0 1 1"/><path d="M1 10h1"/><path d="M22 10h1"/><path d="m3.5 4.5.7.7"/><path d="m19.8 4.5-.7.7"/><path d="M12 2v1"/></svg>`,
+        };
+
+        // ─── HELPERS ───────────────────────────────────────
+        function phaseColor(phase) {
+            return { green: '#10b981', yellow: '#f59e0b', red: '#ef4444' }[phase] || '#64748b';
+        }
+        function densityClass(d) {
+            return { Low: 'density-low', Medium: 'density-medium', High: 'density-high' }[d] || '';
+        }
+        function phaseClass(p) {
+            return { green: 'phase-green', yellow: 'phase-yellow', red: 'phase-red' }[p] || '';
+        }
+        function showToast(msg, isError) {
+            const t = document.getElementById('toast');
+            t.innerHTML = `<i data-lucide="${isError ? 'x-circle' : 'check-circle'}" style="width:16px;height:16px;"></i> ${msg}`;
+            t.style.borderColor = isError ? 'rgba(239,68,68,0.4)' : 'rgba(16,185,129,0.4)';
+            t.style.color = isError ? '#f87171' : '#34d399';
+            t.classList.add('show');
+            lucide.createIcons({ nodes: [t] });
+            setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        // ─── CLOCK ─────────────────────────────────────────
+        function tickClock() {
+            const now = new Date();
+            document.getElementById('liveClock').textContent = now.toLocaleTimeString();
+        }
+        setInterval(tickClock, 1000);
+        tickClock();
+
+        // ─── COUNTDOWN RING SVG ───────────────────────────
+        function countdownRingSVG(countdown, maxTime, color) {
+            const r = 34, c = 2 * Math.PI * r;
+            const pct = Math.max(0, Math.min(1, countdown / maxTime));
+            const offset = c * (1 - pct);
+            return `
+        <div class="countdown-ring">
+            <svg width="80" height="80" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="${r}" fill="none" stroke="rgba(148,163,184,0.1)" stroke-width="6"/>
+                <circle cx="40" cy="40" r="${r}" fill="none" stroke="${color}" stroke-width="6"
+                    stroke-dasharray="${c}" stroke-dashoffset="${offset}" stroke-linecap="round"
+                    style="transition: stroke-dashoffset 0.5s ease;"/>
+            </svg>
+            <div class="value" style="color:${color}">${Math.max(0, countdown)}</div>
+        </div>`;
+        }
+
+        // ─── SIGNAL LIGHT BAR ──────────────────────────────
+        function signalLightBar(phase) {
+            const lights = ['red', 'yellow', 'green'];
+            return lights.map(l => {
+                const c = { red: '#ef4444', yellow: '#fbbf24', green: '#10b981' }[l];
+                const active = l === phase;
+                return `<span class="signal-dot ${active ? 'active' : 'dim'}" style="color:${c}; background:${c};"></span>`;
+            }).join('');
+        }
+
+        // ─── RENDER STATS ──────────────────────────────────
+        function renderStats() {
+            const total = signalsData.reduce((s, x) => s + x.vehicle_count, 0);
+            const avgGreen = signalsData.length ? Math.round(signalsData.reduce((s, x) => s + x.green_time, 0) / signalsData.length) : 0;
+            const high = signalsData.filter(x => x.density === 'High').length;
+            const emergency = signalsData.filter(x => x.emergency).length;
+
+            const stats = [
+                { label: 'Total Vehicles', value: total, icon: STAT_ICONS.car, color: 'from-cyan-500 to-blue-600' },
+                { label: 'Avg Green Time', value: avgGreen + 's', icon: STAT_ICONS.timer, color: 'from-emerald-500 to-teal-600' },
+                { label: 'High Density', value: high, icon: STAT_ICONS.alertCircle, color: 'from-amber-500 to-orange-600' },
+                { label: 'Emergency', value: emergency, icon: STAT_ICONS.siren, color: 'from-red-500 to-rose-600' },
+            ];
+
+            document.getElementById('statsRow').innerHTML = stats.map(s => `
+        <div class="glass glass-hover p-5 flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br ${s.color} flex items-center justify-center text-white flex-shrink-0">${s.icon}</div>
+            <div>
+                <div class="text-2xl font-bold text-white">${s.value}</div>
+                <div class="text-xs text-slate-400 font-medium">${s.label}</div>
+            </div>
+        </div>
+    `).join('');
+        }
+
+        // ─── RENDER SIGNAL CARDS ───────────────────────────
+        function renderSignals() {
+            const grid = document.getElementById('signalGrid');
+            grid.innerHTML = signalsData.map(sig => {
+                const maxTime = sig.green_time + 10;
+                const color = phaseColor(sig.current_phase);
+                const isEmergency = sig.emergency;
+                return `
+        <div class="glass glass-hover p-6 ${isEmergency ? 'emergency-active' : ''}" id="card-${sig.id}">
+            <!-- Top row: name + lights -->
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i data-lucide="radio" class="icon-sm text-slate-400"></i> ${sig.name}
+                    </h3>
+                    <p class="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                        <i data-lucide="map-pin" class="icon-sm"></i> ${sig.location}
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    ${signalLightBar(sig.current_phase)}
+                </div>
+            </div>
+
+            <!-- Center: countdown + info -->
+            <div class="flex items-center gap-6 mb-5">
+                ${countdownRingSVG(sig.countdown, maxTime, color)}
+                <div class="flex-1 space-y-2">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-bold ${phaseClass(sig.current_phase)} uppercase">${sig.current_phase}</span>
+                        <span class="px-2.5 py-1 rounded-full text-xs font-bold ${densityClass(sig.density)}">${sig.density}</span>
+                        ${isEmergency ? '<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1"><i data-lucide="siren" style="width:12px;height:12px;"></i> EMERGENCY</span>' : ''}
+                    </div>
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                        <span class="text-slate-400 flex items-center gap-1"><i data-lucide="car" style="width:14px;height:14px;"></i> Vehicles</span>
+                        <span class="text-white font-semibold">${sig.vehicle_count}</span>
+                        <span class="text-slate-400 flex items-center gap-1"><i data-lucide="timer" style="width:14px;height:14px;"></i> Green Time</span>
+                        <span class="text-white font-semibold">${sig.green_time}s</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="border-t border-slate-700/50 pt-4 space-y-3">
+                <!-- Override form -->
+                <div class="flex gap-2">
+                    <input type="number" id="vc-${sig.id}" placeholder="Vehicle count" min="0" max="200"
+                        class="flex-1 px-3 py-2 rounded-lg bg-slate-800/80 border border-slate-600/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50" />
+                    <button onclick="overrideSignal(${sig.id})"
+                        class="px-4 py-2 rounded-lg text-xs font-bold bg-cyan-600/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-600/30 transition-all flex items-center gap-1">
+                        <i data-lucide="sliders-horizontal" style="width:14px;height:14px;"></i> Override
+                    </button>
+                </div>
+                <!-- Emergency toggle -->
+                <button onclick="toggleEmergency(${sig.id}, ${isEmergency ? 'false' : 'true'})"
+                    class="w-full py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5
+                        ${isEmergency
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
+                        : 'bg-slate-700/50 text-slate-400 border border-slate-600/30 hover:bg-slate-700'}">
+                    <i data-lucide="${isEmergency ? 'shield-off' : 'ambulance'}" style="width:14px;height:14px;"></i>
+                    ${isEmergency ? 'Disable Emergency' : 'Enable Emergency Priority'}
+                </button>
+            </div>
+        </div>`;
+            }).join('');
+
+            // Re-initialize Lucide icons for dynamically added content
+            lucide.createIcons();
+        }
+
+        // ─── MAP ───────────────────────────────────────────
+        function initMap() {
+            if (mapInstance) return;
+            mapInstance = L.map('map', { zoomControl: false }).setView([12.9716, 77.5946], 14);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OSM & CARTO', maxZoom: 19,
+            }).addTo(mapInstance);
+            L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
+
+            // Get user's real location
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+
+                        // Add user marker with pulsing blue dot
+                        const userIcon = L.divIcon({
+                            className: '',
+                            html: `<div style="
+                        position: relative; width: 20px; height: 20px;
+                    ">
+                        <div style="
+                            position: absolute; inset: -6px;
+                            background: rgba(56, 189, 248, 0.2);
+                            border-radius: 50%;
+                            animation: userPulse 2s ease-in-out infinite;
+                        "></div>
+                        <div style="
+                            width: 20px; height: 20px; border-radius: 50%;
+                            background: #38bdf8; border: 3px solid #fff;
+                            box-shadow: 0 0 12px rgba(56,189,248,0.6);
+                            position: relative; z-index: 2;
+                        "></div>
+                    </div>`,
+                            iconSize: [20, 20], iconAnchor: [10, 10],
+                        });
+
+                        userMarker = L.marker([userLocation.lat, userLocation.lng], { icon: userIcon })
+                            .addTo(mapInstance)
+                            .bindPopup('<b>Your Location</b>');
+
+                        // Update location status
+                        document.getElementById('locationStatus').innerHTML = `
+                    <i data-lucide="navigation" style="width:14px;height:14px;" class="text-emerald-400"></i>
+                    <span class="text-emerald-400">Location found</span>
+                `;
+                        lucide.createIcons({ nodes: [document.getElementById('locationStatus')] });
+                    },
+                    (err) => {
+                        document.getElementById('locationStatus').innerHTML = `
+                    <i data-lucide="map-pin-off" style="width:14px;height:14px;" class="text-slate-500"></i>
+                    <span>Location unavailable</span>
+                `;
+                        lucide.createIcons({ nodes: [document.getElementById('locationStatus')] });
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            }
+        }
+
+        // Add pulse animation for user marker
+        const styleSheet = document.createElement('style');
+        styleSheet.textContent = `
+    @keyframes userPulse {
+        0%, 100% { transform: scale(1); opacity: 0.6; }
+        50% { transform: scale(2.5); opacity: 0; }
+    }
+`;
+        document.head.appendChild(styleSheet);
+
+        function updateMapMarkers() {
+            signalsData.forEach(sig => {
+                const color = phaseColor(sig.current_phase);
+                const icon = L.divIcon({
+                    className: '',
+                    html: `<div style="
+                width:28px; height:28px; border-radius:50%;
+                background:${color}; border:3px solid rgba(255,255,255,0.9);
+                box-shadow: 0 0 12px ${color};
+                display:flex; align-items:center; justify-content:center;
+                font-size:11px; font-weight:800; color:#fff;
+            ">${sig.vehicle_count}</div>`,
+                    iconSize: [28, 28], iconAnchor: [14, 14],
+                });
+                if (mapMarkers[sig.id]) {
+                    mapMarkers[sig.id].setLatLng([sig.lat, sig.lng]).setIcon(icon);
+                    mapMarkers[sig.id].setPopupContent(
+                        `<div style="font-family:Inter,sans-serif; color:#333;">
+                    <b>${sig.name}</b><br>${sig.location}<br>
+                    Vehicles: ${sig.vehicle_count} &bull; Phase: ${sig.current_phase}<br>
+                    Density: ${sig.density}
+                </div>`
+                    );
+                } else {
+                    mapMarkers[sig.id] = L.marker([sig.lat, sig.lng], { icon })
+                        .addTo(mapInstance)
+                        .bindPopup(`<b>${sig.name}</b><br>${sig.location}`);
+                }
+            });
+        }
+
+        // ─── TREND CHART ───────────────────────────────────
+        async function loadTrendChart() {
+            if (!signalsData.length) return;
+
+            const datasets = [];
+            for (let i = 0; i < signalsData.length; i++) {
+                const sig = signalsData[i];
+                try {
+                    const res = await fetch(`/history/${sig.id}?limit=20`);
+                    const hist = await res.json();
+                    datasets.push({
+                        label: sig.name,
+                        data: hist.map(h => h.vehicle_count),
+                        borderColor: CHART_COLORS[i % CHART_COLORS.length],
+                        backgroundColor: CHART_COLORS[i % CHART_COLORS.length].replace('rgb', 'rgba').replace(')', ',0.1)'),
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                    });
+                } catch (e) { /* skip */ }
+            }
+
+            const maxLen = Math.max(...datasets.map(d => d.data.length), 0);
+            const labels = Array.from({ length: maxLen }, (_, i) => i + 1);
+
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            if (trendChart) trendChart.destroy();
+
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } } },
+                    },
+                    scales: {
+                        x: { ticks: { color: '#475569' }, grid: { color: 'rgba(51,65,85,0.3)' } },
+                        y: {
+                            ticks: { color: '#475569' }, grid: { color: 'rgba(51,65,85,0.3)' }, beginAtZero: true,
+                            title: { display: true, text: 'Vehicle Count', color: '#64748b' }
+                        },
+                    },
+                },
+            });
+        }
+
+        // ─── API CALLS ─────────────────────────────────────
+        async function fetchSignals() {
+            try {
+                const res = await fetch('/signals');
+                signalsData = await res.json();
+                renderStats();
+                renderSignals();
+                updateMapMarkers();
+                document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+            } catch (e) {
+                console.error('Fetch failed', e);
+            }
+        }
+
+        async function simulateAll() {
+            const btn = document.getElementById('simBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" style="width:14px;height:14px;" class="animate-spin"></i> Working...';
+            lucide.createIcons({ nodes: [btn] });
+            try {
+                await fetch('/simulate');
+                await fetchSignals();
+                await loadTrendChart();
+                showToast('Simulation complete — counts regenerated');
+            } catch (e) {
+                showToast('Simulation failed', true);
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="shuffle" style="width:14px;height:14px;"></i> Simulate';
+            lucide.createIcons({ nodes: [btn] });
+        }
+
+        async function overrideSignal(id) {
+            const input = document.getElementById(`vc-${id}`);
+            const vc = parseInt(input.value);
+            if (isNaN(vc) || vc < 0) { showToast('Enter a valid vehicle count', true); return; }
+            try {
+                await fetch('/override', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ signal_id: id, vehicle_count: vc }),
+                });
+                await fetchSignals();
+                await loadTrendChart();
+                showToast(`Signal #${id} overridden — ${vc} vehicles`);
+                input.value = '';
+            } catch (e) {
+                showToast('Override failed', true);
+            }
+        }
+
+        async function toggleEmergency(id, enable) {
+            try {
+                await fetch('/emergency', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ signal_id: id, enable }),
+                });
+                await fetchSignals();
+                showToast(enable ? 'Emergency mode ACTIVATED' : 'Emergency mode disabled');
+            } catch (e) {
+                showToast('Emergency toggle failed', true);
+            }
+        }
+
+        // ─── INIT ──────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', async () => {
+            lucide.createIcons();
+            initMap();
+            await fetchSignals();
+            await loadTrendChart();
+
+            // Auto-refresh every 3 seconds
+            setInterval(async () => {
+                await fetchSignals();
+            }, POLL_INTERVAL);
+
+            // Refresh chart less frequently (every 15s)
+            setInterval(async () => {
+                await loadTrendChart();
+            }, 15000);
+        });
+    </script>
+</body>
+
+</html>
